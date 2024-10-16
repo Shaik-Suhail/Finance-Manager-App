@@ -27,50 +27,43 @@ def add_transaction(user_id, transaction_type, amount, category):
     finally:
         conn.close()
 
-def update_transaction():
+def update_transaction(transaction_id, transaction_type, amount, category):
     """Update an existing transaction in the database."""
     conn = connect_db()
     cursor = conn.cursor()
     
     try:
-        transaction_id = int(input("Enter transaction ID to update: "))
+        # Check if the transaction exists
         cursor.execute("SELECT * FROM transactions WHERE id=?", (transaction_id,))
         transaction = cursor.fetchone()
+        
+        # Debugging: Print the found transaction (if any)
+        print(f"Transaction before update: {transaction}")
 
         if not transaction:
             print("Transaction ID not found. Please try again.")
-            return
+            return None  # Return None if the transaction ID doesn't exist
         
-        transaction_type = input("Enter new transaction type (income/expense): ").strip().lower()
-        if transaction_type not in ['income', 'expense']:
-            print("Invalid transaction type. Use 'income' or 'expense'.")
-            return
-        
-        amount = float(input("Enter new amount: "))
-        category = input("Enter new category: ")
-        date = input("Enter new date (YYYY-MM-DD) or press Enter to keep the same: ")
-        
-        sql = "UPDATE transactions SET type=?, amount=?, category=?, date=? WHERE id=?"
-        cursor.execute(sql, (transaction_type, amount, category, date or transaction[5], transaction_id))
+        # Update the transaction details
+        cursor.execute("UPDATE transactions SET type=?, amount=?, category=? WHERE id=?",
+                       (transaction_type, amount, category, transaction_id))
         conn.commit()
         print("Transaction updated successfully!")
     
-    except ValueError:
-        print("Invalid input. Please enter numeric values for amount.")
-    
     except Exception as e:
         print(f"Error updating transaction: {e}")
+        return None
     
     finally:
         conn.close()
 
-def delete_transaction():
+
+def delete_transaction(transaction_id):
     """Delete a transaction from the database."""
     conn = connect_db()
     cursor = conn.cursor()
     
     try:
-        transaction_id = int(input("Enter transaction ID to delete: "))
         cursor.execute("SELECT * FROM transactions WHERE id=?", (transaction_id,))
         transaction = cursor.fetchone()
 
@@ -164,58 +157,12 @@ def generate_yearly_report(user_id, year):
     
     conn.close()
 
-def generate_report(user_id, year, month=None):
-    """Generate a financial report for the specified month and year or the whole year."""
-    conn = connect_db()
-    cursor = conn.cursor()
-    
-    try:
-        if month:
-            cursor.execute("""
-                SELECT SUM(amount) FROM transactions 
-                WHERE user_id=? AND type='income' AND strftime('%Y', date)=? AND strftime('%m', date)=?
-            """, (user_id, year, month))
-            total_income = cursor.fetchone()[0] or 0
-            
-            cursor.execute("""
-                SELECT SUM(amount) FROM transactions 
-                WHERE user_id=? AND type='expense' AND strftime('%Y', date)=? AND strftime('%m', date)=?
-            """, (user_id, year, month))
-            total_expenses = cursor.fetchone()[0] or 0
-        else:
-            cursor.execute("""
-                SELECT SUM(amount) FROM transactions 
-                WHERE user_id=? AND type='income' AND strftime('%Y', date)=?
-            """, (user_id, year))
-            total_income = cursor.fetchone()[0] or 0
-            
-            cursor.execute("""
-                SELECT SUM(amount) FROM transactions 
-                WHERE user_id=? AND type='expense' AND strftime('%Y', date)=?
-            """, (user_id, year))
-            total_expenses = cursor.fetchone()[0] or 0
-
-        savings = total_income - total_expenses
-        if month:
-            print(f"Report for {month}/{year} - Income: ${total_income:.2f}, Expenses: ${total_expenses:.2f}, Savings: ${savings:.2f}")
-        else:
-            print(f"Report for the year {year} - Income: ${total_income:.2f}, Expenses: ${total_expenses:.2f}, Savings: ${savings:.2f}")
-    
-    except Exception as e:
-        print(f"Error generating report: {e}")
-    
-    finally:
-        conn.close()
-
-def set_budget(user_id):
+def set_budget(user_id, category, budget):
     """Set a budget for a specific category for a user."""
     conn = connect_db()
     cursor = conn.cursor()
     
     try:
-        category = input("Enter category: ")
-        budget = float(input("Enter budget amount: "))
-        
         cursor.execute("""
             INSERT INTO budgets (user_id, category, budget) 
             VALUES (?, ?, ?) 
@@ -240,8 +187,9 @@ def check_budget(user_id):
     
     if not budgets:
         print("No budgets set. Please set a budget first.")
-        return
+        return "No budgets set."
     
+    budget_warnings = []
     print("\nBudget Check:")
     for budget in budgets:
         category = budget[2]
@@ -254,14 +202,15 @@ def check_budget(user_id):
         
         total_expense = cursor.fetchone()[0] or 0
         if total_expense > budget_amount:
-            print(f"Warning: You have exceeded your budget for {category}! Budget: ${budget_amount:.2f}, Expenses: ${total_expense:.2f}")
+            budget_warnings.append(f"Warning: You have exceeded your budget for {category}! "
+                                   f"Budget: ${budget_amount:.2f}, Expenses: ${total_expense:.2f}")
         else:
-            print(f"You are within budget for {category}. Budget: ${budget_amount:.2f}, Expenses: ${total_expense:.2f}")
+            print(f"You are within budget for {category}. Budget: ${budget_amount:.2f}, "
+                  f"Expenses: ${total_expense:.2f}")
 
     conn.close()
 
-import os
-import shutil
+    return "\n".join(budget_warnings) if budget_warnings else "You are within your budget."
 
 def backup_database():
     """Backup the SQLite database to a specified directory."""
